@@ -1,7 +1,7 @@
 {
   "name": "smarttrader-form-server",
   "version": "1.0.0",
-  "description": "API Node.js pour le formulaire SmartTrader (Render + Zoho + Google Sheet)",
+  "description": "API Node.js SmartTrader (Render + Zoho + Google Sheets)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
