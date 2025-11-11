@@ -2,27 +2,27 @@
 import express from 'express';
 import cors from 'cors';
 import nodemailer from 'nodemailer';
-// si ton runtime n'a pas fetch natif, décommente ça et ajoute node-fetch dans package.json
-// import fetch from 'node-fetch';
+// import fetch from 'node-fetch'; // garde-le commenté si tu es en Node 18+
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// URL de ton Apps Script (Google Sheet)
+// Ton Google Apps Script Web App
 const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyCR5kpjb70mHsIEIW9pvYXW7wTRZsoa9e8BV8CY-M4owNIb43xhkOIpIas8U-8tNdM/exec';
 
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS'] }));
 app.use(express.json());
 
-// transport Zoho
+// ✅ Configuration SMTP Zoho Mail (Europe)
 const transporter = nodemailer.createTransport({
-  host: 'smtp.zoho.eu', // ou 'smtp.zoho.com' selon ton compte
-  port: 465,
-  secure: true,
+  host: 'smtp.zoho.eu',
+  port: 587,
+  secure: false, // STARTTLS
   auth: {
-    user: process.env.ZOHO_USER, // ex: contact@smarttrader.cfd
-    pass: process.env.ZOHO_PASS, // mot de passe d'application
+    user: process.env.ZOHO_USER,
+    pass: process.env.ZOHO_PASS,
   },
+  tls: { rejectUnauthorized: false }
 });
 
 app.post('/send-form', async (req, res) => {
@@ -38,7 +38,7 @@ app.post('/send-form', async (req, res) => {
   let mailError = null;
   let sheetError = null;
 
-  // 1) envoyer l'email Zoho
+  // 1️⃣ Envoi du mail via Zoho
   try {
     await transporter.sendMail({
       from: process.env.ZOHO_USER,
@@ -58,18 +58,14 @@ app.post('/send-form', async (req, res) => {
     mailError = err.message;
   }
 
-  // 2) envoyer vers Google Sheet
+  // 2️⃣ Enregistrement Google Sheet
   try {
     const resp = await fetch(GOOGLE_SCRIPT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nom, prenom, email, message }),
     });
-
-    if (!resp.ok) {
-      throw new Error('Réponse Google Script non OK: ' + resp.status);
-    }
-
+    if (!resp.ok) throw new Error('Réponse Google Script non OK');
     console.log('✅ Données envoyées au Google Sheet');
     sheetOk = true;
   } catch (err) {
@@ -77,17 +73,13 @@ app.post('/send-form', async (req, res) => {
     sheetError = err.message;
   }
 
-  // 3) répondre au navigateur AVEC le détail
-  if (mailOk && sheetOk) {
-    return res.json({ ok: true });
-  } else {
-    return res.status(200).json({
-      ok: false,
-      mailOk,
-      sheetOk,
-      error: `mail: ${mailError || 'OK'} | sheet: ${sheetError || 'OK'}`
-    });
-  }
+  // 3️⃣ Réponse au front
+  return res.json({
+    ok: mailOk && sheetOk,
+    mailOk,
+    sheetOk,
+    error: `mail: ${mailError || 'OK'} | sheet: ${sheetError || 'OK'}`
+  });
 });
 
 app.get('/', (req, res) => {
@@ -97,5 +89,6 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
   console.log('🚀 Serveur démarré sur le port ' + PORT);
 });
+
 
 
