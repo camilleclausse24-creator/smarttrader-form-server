@@ -1,19 +1,20 @@
 // server.js
-import express from 'express';
-import cors from 'cors';
-import nodemailer from 'nodemailer';
-// import fetch from 'node-fetch'; // décommente si ton Node n'a pas fetch
+const express = require('express');
+const cors = require('cors');
+const nodemailer = require('nodemailer');
+
+// fetch dynamique (comme dans ton ancien code)
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ton script Google Sheet
+// ton Apps Script (le tien)
 const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyCR5kpjb70mHsIEIW9pvYXW7wTRZsoa9e8BV8CY-M4owNIb43xhkOIpIas8U-8tNdM/exec';
 
-app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS'] }));
-app.use(express.json());
-
-// on prépare le transport mail, mais il peut être incomplet si les vars ne sont pas mises
+// ⚠️ sur Render tu dois mettre ces 2 variables dans les Environment vars :
+// ZOHO_USER = contact@smarttrader.cfd
+// ZOHO_PASS = ton mot de passe d’application Zoho
 const transporter = nodemailer.createTransport({
   host: 'smtp.zoho.eu',
   port: 587,
@@ -23,71 +24,71 @@ const transporter = nodemailer.createTransport({
     pass: process.env.ZOHO_PASS,
   },
   tls: { rejectUnauthorized: false },
-  // on met un timeout court pour ne pas bloquer
+  // on évite que ça bloque trop longtemps
   connectionTimeout: 5000,
 });
 
+// CORS : on ouvre pour Hostinger + tout
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'OPTIONS']
+}));
+app.use(express.json());
+
 app.post('/send-form', async (req, res) => {
   const { nom, prenom, email, message } = req.body || {};
-  console.log('📥 Reçu du front :', req.body);
 
   if (!nom || !email) {
-    return res.status(400).json({ ok: false, error: 'nom et email requis' });
+    return res.status(400).json({ ok: false, error: 'Champs manquants' });
   }
 
-  // 1️⃣ on essaye d'abord d'écrire dans le Google Sheet (c'est ce qui marche chez toi)
-  let sheetOk = false;
-  try {
-    const resp = await fetch(GOOGLE_SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nom, prenom, email, message }),
-    });
-    if (!resp.ok) throw new Error('Réponse Google Script non OK');
-    console.log('✅ Données envoyées au Google Sheet');
-    sheetOk = true;
-  } catch (err) {
-    console.error('❌ Erreur envoi Google Sheet :', err.message);
-  }
+  // 1️⃣ on répond TOUT DE SUITE au navigateur (important pour ton front)
+  res.json({ ok: true });
 
-  // 2️⃣ on répond tout de suite au navigateur (pour que ton Hostinger n’attende pas 15s)
-  res.json({
-    ok: sheetOk,           // si le sheet est bon → le front peut rediriger Telegram
-    sheetOk,
-    mailOk: false,         // on ne sait pas encore
-    info: 'mail en arrière-plan',
-  });
-
-  // 3️⃣ on fait l’envoi Zoho APRÈS avoir répondu (si les vars existent)
+  // 2️⃣ on tente l’email Zoho en arrière-plan
   if (process.env.ZOHO_USER && process.env.ZOHO_PASS) {
     try {
       await transporter.sendMail({
         from: process.env.ZOHO_USER,
         to: process.env.ZOHO_USER,
-        subject: `Nouveau message de ${nom}`,
+        subject: `Nouveau formulaire : ${prenom || ''} ${nom}`,
         html: `
           <p><b>Nom :</b> ${nom}</p>
-          <p><b>Prénom :</b> ${prenom || '(non renseigné)'}</p>
+          <p><b>Prénom :</b> ${prenom || ''}</p>
           <p><b>Email :</b> ${email}</p>
           <p><b>Message :</b><br>${(message || '').replace(/\n/g, '<br>')}</p>
-        `,
+        `
       });
-      console.log('✅ Email Zoho envoyé (après réponse)');
+      console.log('✅ Email Zoho envoyé');
     } catch (err) {
-      console.error('❌ Erreur envoi Zoho (après réponse) :', err.message);
+      console.error('❌ Erreur envoi e-mail Zoho :', err.message);
     }
   } else {
-    console.log('⚠️ Pas de ZOHO_USER/ZOHO_PASS définis, mail non envoyé.');
+    console.log('⚠️ Pas de ZOHO_USER/PASS définis sur Render, email non envoyé.');
+  }
+
+  // 3️⃣ on envoie aux Google Sheets en arrière-plan
+  try {
+    await fetch(GOOGLE_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nom, prenom, email, message })
+    });
+    console.log('✅ Données envoyées à Google Sheets');
+  } catch (err) {
+    console.error('❌ Erreur envoi vers Google Sheets :', err.message);
   }
 });
 
-app.get('/', (req, res) => {
-  res.send('SmartTrader form API is running ✅');
+// test
+app.get('/ping', (req, res) => {
+  res.send('pong');
 });
 
 app.listen(PORT, () => {
-  console.log('🚀 Serveur démarré sur le port ' + PORT);
+  console.log(`🚀 Serveur démarré sur port ${PORT}`);
 });
+
 
 
 
